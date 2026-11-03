@@ -1,12 +1,11 @@
 # Assassin's Creed Brotherhood Raw Input Mouse Fix
 
 > [!WARNING]
-> This patch has been pretty much entirely been generated using AI;
-> I won't and will never claim to have enough knowledge or expertise to do this
-> kind of reverse-engineering by myself; I've tested it on foot, climbing and on
-> horseback at ~300 FPS and so far spotted no major issues (on my machine ofc,
-> if you have issues feel free to open an Issue).
-> This patch currently only works for the Ubisoft Connect version of the game.
+> This patch has been pretty much entirely been generated using AI; 
+> I won't and will never claim to have enough knowledge or expertise to do this 
+> kind of reverse-engineering by myself; I've tested a couple hours of gameplay and so far spotted no major issues (on my machine ofc, if you have issues feel free to open an Issue)
+> this patch currently probably only works for the latest Ubisoft Connect version of the game.
+> If you're interested and want more (human generated) info, I have a blog post [here](https://slop-blog.enkhayzomachines.net/posts/assassin-s-creed-brotherhood-raw-input-mouse-fix) :)
 
 A runtime patch for the 32-bit PC version of *Assassin's Creed Brotherhood*. It
 removes the mouse acceleration of the cameras and makes the turn per mouse count
