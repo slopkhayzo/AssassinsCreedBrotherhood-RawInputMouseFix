@@ -4,13 +4,17 @@ Assassin's Creed Brotherhood Raw Input Mouse Fix v@VERSION@
 Removes the mouse acceleration of the cameras and makes the turn per mouse count
 the same at every frame rate. Mouse counts come from Raw Input.
 
-Supported game build
---------------------
-Assassin's Creed Brotherhood for Windows, Ubisoft Connect version (2022-10-27
-rebuild), ACBSP.exe SHA-256:
+Supported game builds
+---------------------
+Assassin's Creed Brotherhood for Windows (2022-10-27 rebuild):
+
+Ubisoft Connect version, ACBSP.exe SHA-256:
 C0F6074082C99FAB4AA47715591966C727F569F32DBD3B0ACC34E43278ED157A
 
-The hash identifies the reference build; it is not a hard allowlist. Before
+Steam version (the same build wrapped in SteamStub DRM), ACBSP.exe SHA-256:
+72FE53EB40CAE0F17D8EA457A6E12694B32A3B41D0D88B8BF79169750556C174
+
+The hashes identify the reference builds; they are not a hard allowlist. Before
 installing a hook, the plugin checks the x86 PE image, its section layout and
 the bytes of every hook site. A different ACBSP.exe is accepted only if all of
 that still matches. A failed check skips that hook, leaves the game unchanged,
@@ -33,7 +37,7 @@ Convenience archive with Ultimate ASI Loader:
 
 For either installation:
 1. Close the game before copying files.
-2. Start the game normally, through Ubisoft Connect.
+2. Start the game normally, through Ubisoft Connect or Steam.
 
 What it fixes
 -------------

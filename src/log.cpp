@@ -38,8 +38,33 @@ void LogOpen(HMODULE self) {
 
     wchar_t path[MAX_PATH];
     if (swprintf_s(path, L"%s\\acb-raw-mouse-fix.log", g_directory) < 0) return;
-    g_logFile = CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS,
-                            FILE_ATTRIBUTE_NORMAL, nullptr);
+    // A launch can start several ACBSP.exe in a row (Steam, SteamStub, Ubisoft Connect hand-offs):
+    // append, so the last one doesn't erase the others, and start over for a new launch (the log
+    // untouched for 10 minutes) or past 4 MB.
+    bool fresh = true;
+    WIN32_FILE_ATTRIBUTE_DATA attributes;
+    if (GetFileAttributesExW(path, GetFileExInfoStandard, &attributes)) {
+        FILETIME now;
+        GetSystemTimeAsFileTime(&now);
+        ULARGE_INTEGER written, current;
+        written.LowPart = attributes.ftLastWriteTime.dwLowDateTime;
+        written.HighPart = attributes.ftLastWriteTime.dwHighDateTime;
+        current.LowPart = now.dwLowDateTime;
+        current.HighPart = now.dwHighDateTime;
+        const ULONGLONG age = current.QuadPart > written.QuadPart ? current.QuadPart - written.QuadPart : 0;
+        fresh = age > 10ull * 60 * 10000000 || attributes.nFileSizeHigh != 0 || attributes.nFileSizeLow > 4u << 20;
+    }
+    g_logFile = CreateFileW(path, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+                            fresh ? CREATE_ALWAYS : OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (g_logFile == INVALID_HANDLE_VALUE) return;
+    char header[160];
+    SYSTEMTIME local;
+    GetLocalTime(&local);
+    const int length2 = _snprintf_s(header, _TRUNCATE, "==== process %lu, %04u-%02u-%02u %02u:%02u:%02u ====\r\n",
+                                    GetCurrentProcessId(), local.wYear, local.wMonth, local.wDay, local.wHour,
+                                    local.wMinute, local.wSecond);
+    DWORD written2 = 0;
+    if (length2 > 0) WriteFile(g_logFile, header, DWORD(length2), &written2, nullptr);
 }
 
 void Log(const char* format, ...) {

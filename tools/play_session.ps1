@@ -13,16 +13,18 @@
 # only after a login or an update. So this waits for any ACBSP.exe, and treats a process
 # that lived less than HandOffSec as that hand-off: the session isn't over until the real
 # game has run and closed. (2026-11-03: a hand-off slower than the old 20 s grace ended
-# the session early, removed the plugin, and the user played stock.)
+# the session early, removed the plugin, and the user played stock. 2026-11-04: a 47 s
+# session counted as a hand-off under the old 60 s limit and the job waited 5 minutes; a
+# process whose plugin log shows the mouse acquired is now always the game proper.)
 param(
     [string]$GameDir = "D:\Program Files\Games\Ubisoft\Assassin's Creed Brotherhood",
     [int]$Minutes = 180,
     [string]$Arguments = '',
-    [ValidateSet('connect', 'exe')]
-    [string]$Launch = 'connect',
+    [ValidateSet('auto', 'connect', 'steam', 'exe')]
+    [string]$Launch = 'auto',   # auto: Ubisoft Connect if it has the folder, else Steam, else the exe
     [int]$StartGraceSec = 300,
     [int]$RelaunchGraceSec = 20,
-    [int]$HandOffSec = 60,
+    [int]$HandOffSec = 15,   # hand-offs seen so far lived 1-2 s; a played session lasts longer
     [switch]$Patched,
     [switch]$Stock,
     [double]$MouseScale = 25,
@@ -32,6 +34,7 @@ param(
     [switch]$Watch,
     [int]$WatchSeconds = 30,
     [int]$FrameLimit = 0,
+    [int]$SmokeSeconds = 0,   # > 0: unattended start-up check, the game is closed after this long
     [string]$Name = 'play'
 )
 
@@ -119,19 +122,39 @@ $exitCode = 0
 try {
     $started = Get-Date
     $deadline = $started.AddMinutes($Minutes)
+    $wanted = [System.IO.Path]::GetFullPath($GameDir).TrimEnd('\')
     $connectId = $null
-    if ($Launch -eq 'connect' -and -not $Arguments) {
+    $steamAppId = $null
+    if (-not $Arguments -and $Launch -in @('auto', 'connect')) {
         $installs = 'HKLM:\SOFTWARE\WOW6432Node\Ubisoft\Launcher\Installs'
-        $wanted = [System.IO.Path]::GetFullPath($GameDir).TrimEnd('\')
         foreach ($install in @(Get-ChildItem $installs -ErrorAction SilentlyContinue)) {
             $dir = (Get-ItemProperty $install.PSPath -ErrorAction SilentlyContinue).InstallDir
             if ($dir -and [System.IO.Path]::GetFullPath($dir).TrimEnd('\') -ieq $wanted) { $connectId = $install.PSChildName }
         }
     }
+    if (-not $Arguments -and $Launch -in @('auto', 'steam')) {
+        # steamapps\common\<installdir> -> steamapps\appmanifest_<id>.acf with that installdir.
+        $steamapps = Split-Path -Parent (Split-Path -Parent $wanted)
+        $folder = Split-Path -Leaf $wanted
+        foreach ($manifest in @(Get-ChildItem -LiteralPath $steamapps -Filter 'appmanifest_*.acf' -ErrorAction SilentlyContinue)) {
+            $text = Get-Content -LiteralPath $manifest.FullName -Raw
+            if ($text -match '"installdir"\s+"([^"]+)"' -and $Matches[1] -ieq $folder -and $text -match '"appid"\s+"(\d+)"') {
+                $steamAppId = $Matches[1]
+            }
+        }
+    }
+    # A Ubisoft launcher left over from an earlier start makes Steam say the game is already running.
+    $leftovers = @(Get-Process -Name 'UbisoftGameLauncher', 'ACBSP' -ErrorAction SilentlyContinue)
+    foreach ($l in $leftovers) {
+        Write-Host ("note: {0} (pid {1}) is already running since {2:HH:mm:ss}; Steam may refuse to start the game" -f $l.Name, $l.Id, $l.StartTime)
+    }
     $launcher = $null
     if ($connectId) {
         Write-Host "[$($started.ToString('HH:mm:ss'))] starting the game through Ubisoft Connect (uplay://launch/$connectId/0, limit $Minutes min)"
         Start-Process "uplay://launch/$connectId/0"
+    } elseif ($steamAppId) {
+        Write-Host "[$($started.ToString('HH:mm:ss'))] starting the game through Steam (steam://rungameid/$steamAppId, limit $Minutes min)"
+        Start-Process "steam://rungameid/$steamAppId"
     } else {
         Write-Host "[$($started.ToString('HH:mm:ss'))] starting $exe $Arguments (limit $Minutes min)"
         $sp = @{ FilePath = $exe; WorkingDirectory = $GameDir; PassThru = $true }
@@ -143,18 +166,31 @@ try {
     # Wait for the game to be up (Ubisoft Connect may need to start and log in first), and
     # until it has run and closed. A process shorter than HandOffSec is Connect's hand-off.
     $seenPids = @{}
+    $processes = @{}   # pid -> Process, its handle kept open so the exit code can be read later
     $lastSeen = $null
     $longestLife = 0
+    $gameProperSeen = $false
     while ($true) {
         $now = Get-Date
         $procs = Get-Game
         foreach ($p in $procs) {
             if (-not $seenPids.ContainsKey($p.Id)) {
                 $seenPids[$p.Id] = $now
+                try { $null = $p.Handle; $processes[$p.Id] = $p } catch {}
                 Write-Host "[$($now.ToString('HH:mm:ss'))] ACBSP.exe running, pid $($p.Id)"
             }
             $life = ($now - $seenPids[$p.Id]).TotalSeconds
             if ($life -gt $longestLife) { $longestLife = $life }
+        }
+        foreach ($id in @($processes.Keys)) {
+            $p = $processes[$id]
+            if ($p.HasExited) {
+                $code = $null
+                try { $code = $p.ExitCode } catch {}
+                Write-Host ("[{0:HH:mm:ss}] ACBSP.exe pid {1} exited with code {2} after {3:0} s" -f $now, $id, $code,
+                    ($now - $seenPids[$id]).TotalSeconds)
+                $processes.Remove($id)
+            }
         }
         if ($procs.Count -gt 0) {
             $lastSeen = $now
@@ -166,12 +202,25 @@ try {
             }
         } else {
             $gone = ($now - $lastSeen).TotalSeconds
-            if ($longestLife -ge $HandOffSec) {
+            # The game proper acquires the mouse (the plugin logs it); a hand-off never gets that far.
+            if (-not $gameProperSeen -and $Patched -and (Test-Path -LiteralPath $gameLog)) {
+                $gameProperSeen = [bool](Select-String -LiteralPath $gameLog -Pattern 'raw: subclassed' -Quiet)
+            }
+            if ($gameProperSeen -or $longestLife -ge $HandOffSec) {
                 if ($gone -gt $RelaunchGraceSec) { break }
             } elseif ($gone -gt $StartGraceSec) {
                 Write-Host ("the game exited after {0:0} s and was not started again within $StartGraceSec s" -f $longestLife)
                 break
             }
+        }
+        if ($SmokeSeconds -gt 0 -and $procs.Count -gt 0 -and $longestLife -ge $SmokeSeconds) {
+            # Unattended start-up check: let the game reach its menus, then close it.
+            Write-Host ("smoke test: the game ran {0:0} s; closing it" -f $longestLife)
+            Get-Game | ForEach-Object { try { [void]$_.CloseMainWindow() } catch {} }
+            Start-Sleep -Seconds 10
+            Get-Game | ForEach-Object { try { $_.Kill() } catch {} }
+            Start-Sleep -Seconds 2
+            break
         }
         if ($now -gt $deadline) {
             Write-Host "session limit of $Minutes min reached: closing the game"
@@ -198,12 +247,15 @@ try {
         if (Test-Path -LiteralPath $log) {
             $lines = Get-Content -LiteralPath $log
             Write-Host "---- plugin log: $log ($($lines.Count) lines)"
-            if (-not ($lines -match 'd3d9: device created')) {
-                Write-Host 'WARNING: the plugin never saw the game create its device: the game you played may have run without it.'
+            # The game proper subclasses DirectInput's raw-input window once it acquires the mouse;
+            # a hand-off process exits long before that. (The d3d9 hooks are off by default now.)
+            if (-not ($lines -match 'raw: subclassed') -or -not ($lines -match 'hook CameraCurve: installed')) {
+                Write-Host 'WARNING: no plugin process got as far as the game proper (mouse acquired, camera hook installed): the game you played may have run without it.'
                 if ($exitCode -eq 0) { $exitCode = 7 }
             }
-            $lines | Where-Object { $_ -match 'host:|signature|hook|d3d9:|raw: (registration|subclass|no raw|the mouse)|watch: (window|slot)|config:|Sensitivity |F8:|first-person' } |
-                Select-Object -First 40 | ForEach-Object { Write-Host $_ }
+            # Per process: its header, what it hooked, and how far it got. Signature lines are left out.
+            $lines | Where-Object { $_ -match '^====|host:|hook |d3d9:|raw: (subclass|no raw|the mouse)|watch: (window|slot)|Sensitivity |F8:|first-person|skipped' } |
+                Select-Object -First 60 | ForEach-Object { Write-Host $_ }
             Write-Host '---- last statistics'
             $lines | Where-Object { $_ -match 'mouse map:|camera:|raw: [0-9(]|frames:' } | Select-Object -Last 12 | ForEach-Object { Write-Host $_ }
             $summary = @($lines | Where-Object { $_ -match 'watch summary' })

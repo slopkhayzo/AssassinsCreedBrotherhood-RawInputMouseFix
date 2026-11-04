@@ -4,20 +4,27 @@
 > This patch has been pretty much entirely been generated using AI; 
 > I won't and will never claim to have enough knowledge or expertise to do this 
 > kind of reverse-engineering by myself; I've tested a couple hours of gameplay and so far spotted no major issues (on my machine ofc, if you have issues feel free to open an Issue)
-> this patch currently probably only works for the latest Ubisoft Connect version of the game.
+> this patch currently probably only works for the latest Ubisoft Connect and Steam versions of the game.
 > If you're interested and want more (human generated) info, I have a blog post [here](https://slop-blog.enkhayzomachines.net/posts/assassin-s-creed-brotherhood-raw-input-mouse-fix) :)
 
 A runtime patch for the 32-bit PC version of *Assassin's Creed Brotherhood*. It
 removes the mouse acceleration of the cameras and makes the turn per mouse count
 the same at every frame rate. Mouse counts come from Raw Input.
 
-Current release: **v1.0.0-rc1**
+Current release: **v1.0.1**
 
 ## Compatibility
 
 | Build | `ACBSP.exe` SHA-256 | Status |
 | --- | --- | --- |
 | Ubisoft Connect (2022-10-27 rebuild, PE timestamp `1666877377`) | `C0F6074082C99FAB4AA47715591966C727F569F32DBD3B0ACC34E43278ED157A` | Reference build; live-tested |
+| Steam (the same build wrapped in SteamStub DRM 3.1) | `72FE53EB40CAE0F17D8EA457A6E12694B32A3B41D0D88B8BF79169750556C174` | Reference build; live-tested since v1.0.1 |
+
+The Steam executable is the Ubisoft Connect build with its code encrypted by
+SteamStub. Decrypted, the code is byte-identical, so both use the same hook sites.
+If the ASI loader loads the plugin before the stub has decrypted the code, the
+plugin waits for the decryption and installs its hooks right after it, instead
+of rejecting the encrypted bytes.
 
 The SHA-256 is an identity diagnostic, not an allowlist. Before installing any
 hook, the ASI checks that the host is a PE32 x86 `ACBSP.exe` with the researched
@@ -57,11 +64,14 @@ camera collision.
 
 ## Current status
 
-v1.0.0-rc1 passed a 22-minute play session on the reference build (on foot,
+v1.0.0-rc1 passed a 22-minute play session on the Ubisoft Connect build (on foot,
 climbing, horseback; 1920×1080 at 360 Hz, ~300 FPS): every Raw Input count
 reached the camera, none turned the wrong way, and the counts matched what the
 game itself saw. The stock camera's effective multiplier during that session
 ranged from 3× to 192× depending on speed; with the fix it's one constant.
+
+v1.0.1 adds the Steam build: an unattended start to the menus and a play session
+through Steam, with every hook installed and the same count statistics.
 
 Not yet specifically tested: Leonardo's machines, cannons and other special
 controls, and other frame rates in game (frame-rate independence is by design and
@@ -99,13 +109,27 @@ running it, runs the plugin's validation and hook installation against that
 private mapping, and checks every hooked entry. The file on disk is never
 modified.
 
+For the Steam executable, also pass a copy unpacked with
+[Steamless](https://github.com/atom0s/Steamless) (for this test only; never ship
+or install it):
+
+```bat
+set "ACB_STEAM_EXE=C:\path\to\steamapps\common\Assassins Creed Brotherhood\ACBSP.exe"
+set "ACB_STEAM_UNPACKED=C:\path\to\ACBSP.exe.unpacked.exe"
+build-msvc.cmd
+```
+
+The test maps the encrypted file, checks that nothing is hooked while its code is
+encrypted, writes the decrypted code into the mapping as the stub would, and
+checks that the deferred installation then hooks everything.
+
 ## Package
 
 After building, create the plugin-only archive and the convenience archive with
 the tested loader:
 
 ```powershell
-.\package-release.ps1 -Version 1.0.0-rc1 -LoaderPath C:\path\to\x86\dinput8.dll
+.\package-release.ps1 -Version 1.0.1 -LoaderPath C:\path\to\x86\dinput8.dll
 ```
 
 The loader must be the x86 `dinput8.dll` of Ultimate ASI Loader v9.7.4; the
@@ -121,7 +145,7 @@ overwrite an existing release. Omit `-LoaderPath` for the plugin-only archive.
    keep it.
 3. Copy `ACBRawMouseFix.asi` and `acb-raw-mouse-fix.ini` beside `ACBSP.exe`, or
    into the plugin folder of your loader. Keep the two together.
-4. Start the game normally (through Ubisoft Connect).
+4. Start the game normally, through Ubisoft Connect or Steam.
 
 The convenience archive also contains the tested Ultimate ASI Loader v9.7.4 x86
 as `dinput8.dll`. Use it only if the game has no loader yet; don't overwrite an
@@ -178,6 +202,12 @@ installs these MinHook hooks:
   unclamped counts and statistics.
 
 Raw Input is read by subclassing the window DirectInput registered for the mouse.
+
+On the Steam build, if the code is still SteamStub-encrypted when the plugin
+loads, the hooks wait: the plugin patches three imports the game's C runtime
+calls right after the stub hands over (`GetSystemTimeAsFileTime`,
+`GetCommandLineA`, `GetStartupInfoA`), installs the hooks on the first call that
+finds the code decrypted, and restores the imports.
 
 The repository contains the source and the build and package scripts. Release
 archives contain only the built plugin, its configuration, documentation and

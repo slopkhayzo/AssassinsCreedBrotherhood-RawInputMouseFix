@@ -25,8 +25,16 @@ constexpr ExpectedSection kSections[] = {
     {".data", 0x02372000, 0x00291f84, IMAGE_SCN_MEM_READ | IMAGE_SCN_MEM_WRITE, IMAGE_SCN_MEM_EXECUTE},
 };
 
-constexpr const char* kReferenceSha256 =
-    "C0F6074082C99FAB4AA47715591966C727F569F32DBD3B0ACC34E43278ED157A";
+struct ReferenceBuild {
+    const char* sha256;
+    const char* name;
+};
+// The Steam file is the Ubisoft Connect build wrapped in SteamStub 3.1: decrypted, its code is
+// byte-identical, so both use the same hook sites.
+constexpr ReferenceBuild kReferenceBuilds[] = {
+    {"C0F6074082C99FAB4AA47715591966C727F569F32DBD3B0ACC34E43278ED157A", "reference build: Ubisoft Connect"},
+    {"72FE53EB40CAE0F17D8EA457A6E12694B32A3B41D0D88B8BF79169750556C174", "reference build: Steam (SteamStub)"},
+};
 
 uintptr_t g_base = 0;
 DWORD g_imageSize = 0;
@@ -57,6 +65,15 @@ void SetImageBaseForTest(uintptr_t base) {
 
 bool IsInImage(uintptr_t address) {
     return address >= ImageBase() && address < ImageBase() + g_imageSize;
+}
+
+bool HostHasSection(const char* name) {
+    const IMAGE_NT_HEADERS32* nt = Headers();
+    const IMAGE_SECTION_HEADER* sections = IMAGE_FIRST_SECTION(nt);
+    for (WORD i = 0; i < nt->FileHeader.NumberOfSections; ++i) {
+        if (strncmp(reinterpret_cast<const char*>(sections[i].Name), name, IMAGE_SIZEOF_SHORT_NAME) == 0) return true;
+    }
+    return false;
 }
 
 bool ValidateHost() {
@@ -209,8 +226,11 @@ bool HashHostFile(char (&hex)[65]) {
     CloseHandle(file);
     if (!ok) return false;
     for (int i = 0; i < 32; ++i) sprintf_s(hex + i * 2, 3, "%02X", digest[i]);
-    Log("host: SHA-256 %s (%s)", hex,
-        strcmp(hex, kReferenceSha256) == 0 ? "reference build" : "unknown build, layout matched");
+    const char* name = "unknown build, layout matched";
+    for (const ReferenceBuild& build : kReferenceBuilds) {
+        if (strcmp(hex, build.sha256) == 0) name = build.name;
+    }
+    Log("host: SHA-256 %s (%s)", hex, name);
     return true;
 }
 

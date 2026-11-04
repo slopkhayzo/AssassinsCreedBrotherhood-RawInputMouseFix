@@ -12,7 +12,7 @@
 
 namespace acb {
 
-constexpr const char* kVersion = "1.0.0-rc1";
+constexpr const char* kVersion = "1.0.1";
 
 // Addresses below are VAs at the exe's preferred base; Resolve() maps them to the
 // running image (the exe has ASLR).
@@ -57,6 +57,7 @@ bool ValidateHostLayout();                 // the same without the module-name c
 void SetImageBaseForTest(uintptr_t base);  // layout-profile-test: a private mapping of the exe
 // Compares the bytes at a VA with a pattern like "55 8B EC ?? ?? 0F". Logs a mismatch.
 bool CheckSignature(const char* name, uintptr_t va, const char* pattern);
+bool HostHasSection(const char* name);
 // Patches the exe's import of dll!function; returns the previous pointer or nullptr.
 void* PatchImport(const char* dll, const char* function, void* replacement);
 // SHA-256 of the exe on disk, as upper-case hex (empty on failure). Slow: background only.
@@ -82,6 +83,13 @@ bool InstallCameraHooks();
 bool LinearCameraActive();        // the fix is installed and not switched off with F8
 void CameraKeys();                // F8 A/B, F9/F10 scale
 void ReportCameraStats(double seconds);
+
+// ---- deferred.cpp ----------------------------------------------------------
+bool CodeLooksDecrypted();                  // false while SteamStub hasn't decrypted .text
+bool WaitForDecryption(void (*install)());  // installs once the code is decrypted
+void DeferredTick();                        // stats thread: fallback check, 60 s give-up
+bool DeferredInstallDoneForTest();
+void RunDeferredTriggerForTest();
 
 // ---- d3d9hook.cpp ----------------------------------------------------------
 bool InstallD3D9Hooks();

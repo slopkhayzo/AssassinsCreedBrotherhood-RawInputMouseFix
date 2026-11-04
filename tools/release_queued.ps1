@@ -1,6 +1,6 @@
 # Builds, tests, packages and verifies a release inside one queue job (AGENTS.md rule 6):
-#   queue.ps1 submit -Name '...' -File tools\release_queued.ps1 -Arguments 1.0.0-rc1 -TimeoutMinutes 10
-param([string]$Version = '1.0.0-rc1')
+#   queue.ps1 submit -Name '...' -File tools\release_queued.ps1 -Arguments 1.0.1 -TimeoutMinutes 10
+param([string]$Version = '1.0.1')
 
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
