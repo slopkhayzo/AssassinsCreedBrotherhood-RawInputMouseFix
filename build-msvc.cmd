@@ -34,7 +34,7 @@ if errorlevel 1 (
 cl.exe /nologo /std:c++17 /O2 /EHsc /W4 /MT /LD /DUNICODE /D_UNICODE ^
   /I"third_party\minhook\include" /Fo:"build\obj\\" ^
   src\plugin.cpp src\log.cpp src\config.cpp src\layout.cpp src\input.cpp ^
-  src\camera.cpp src\rawinput.cpp src\d3d9hook.cpp src\watch.cpp ^
+  src\camera.cpp src\rawinput.cpp src\d3d9hook.cpp src\watch.cpp src\deferred.cpp ^
   build\obj\minhook\hook.obj build\obj\minhook\buffer.obj ^
   build\obj\minhook\trampoline.obj build\obj\minhook\hde32.obj ^
   /link /OUT:"build\ACBRawMouseFix.asi" /MACHINE:X86 user32.lib bcrypt.lib
@@ -67,7 +67,7 @@ if not exist "build\layout-profile-test\obj" mkdir "build\layout-profile-test\ob
 cl.exe /nologo /std:c++17 /O2 /EHsc /W4 /MT /DUNICODE /D_UNICODE ^
   /I"third_party\minhook\include" /Fo:"build\layout-profile-test\obj\\" ^
   layout-profile-test.cpp src\log.cpp src\config.cpp src\layout.cpp src\input.cpp ^
-  src\camera.cpp src\rawinput.cpp src\d3d9hook.cpp ^
+  src\camera.cpp src\rawinput.cpp src\d3d9hook.cpp src\deferred.cpp ^
   build\obj\minhook\hook.obj build\obj\minhook\buffer.obj ^
   build\obj\minhook\trampoline.obj build\obj\minhook\hde32.obj ^
   /link /OUT:"build\layout-profile-test\layout-profile-test.exe" /MACHINE:X86 /LARGEADDRESSAWARE ^
@@ -121,6 +121,16 @@ if defined ACB_EXE (
   if errorlevel 1 (
     echo.
     echo Layout-profile test failed.
+    exit /b 1
+  )
+)
+rem Optional: the Steam executable (SteamStub-encrypted) and a Steamless-unpacked copy of it, for
+rem the deferred install: nothing hooked while encrypted, everything after decryption.
+if defined ACB_STEAM_EXE if defined ACB_STEAM_UNPACKED (
+  "build\layout-profile-test\layout-profile-test.exe" "%ACB_STEAM_EXE%" --decrypt-with "%ACB_STEAM_UNPACKED%"
+  if errorlevel 1 (
+    echo.
+    echo Steam layout-profile test failed.
     exit /b 1
   )
 )

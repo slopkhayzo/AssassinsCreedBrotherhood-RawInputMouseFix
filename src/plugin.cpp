@@ -33,6 +33,7 @@ DWORD WINAPI StatsThread(void*) {
         Sleep(50);
         const double now = SecondsSinceStart();
         const bool second = now - last >= 1.0;
+        DeferredTick();
         WatchTick(second);
         CameraKeys();
         if (!second) continue;
@@ -48,6 +49,13 @@ DWORD WINAPI StatsThread(void*) {
     }
 }
 
+void InstallHooks() {
+    InstallInputHooks();
+    InstallCameraHooks();
+    InstallD3D9Hooks();
+    if (WatchInstall()) Log("watch: press F11 in game to record the right-stick readers for %d s", g_config.watchSeconds);
+}
+
 void Initialize(HMODULE self) {
     LogOpen(self);
     Log("ACBRawMouseFix %s", kVersion);
@@ -60,10 +68,9 @@ void Initialize(HMODULE self) {
         Log("MinHook initialization failed (%d); no hooks installed", int(status));
         return;
     }
-    InstallInputHooks();
-    InstallCameraHooks();
-    InstallD3D9Hooks();
-    if (WatchInstall()) Log("watch: press F11 in game to record the right-stick readers for %d s", g_config.watchSeconds);
+    // The Steam build's code is still encrypted by SteamStub at this point (src\deferred.cpp).
+    if (HostHasSection(".bind") && !CodeLooksDecrypted()) WaitForDecryption(&InstallHooks);
+    else InstallHooks();
 
     HANDLE thread = CreateThread(nullptr, 0, &StatsThread, nullptr, 0, nullptr);
     if (thread != nullptr) CloseHandle(thread);
